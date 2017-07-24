@@ -2,8 +2,10 @@ package com.example.prodam.secureapp;
 
 import android.content.Intent;
 import android.os.Build;
+import android.provider.MediaStore;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
+import android.security.keystore.KeyProtection;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Base64;
@@ -19,6 +21,9 @@ import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 import org.xmlpull.v1.XmlPullParserFactory;
 
+import java.io.DataInputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.GeneralSecurityException;
@@ -30,10 +35,14 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.Security;
 import java.security.Signature;
 import java.security.SignatureException;
 import java.security.UnrecoverableEntryException;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.text.CollationElementIterator;
 import java.util.ArrayList;
@@ -42,6 +51,11 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
+
+//import java.io.*;
+//import java.nio.*;
+import java.security.*;
+import java.security.spec.*;
 
 import static android.R.attr.data;
 
@@ -209,6 +223,7 @@ public class MainActivity extends AppCompatActivity {
             assert ks != null;
             entry = ks.getEntry("NOVO_alias", null);
         } catch (NoSuchAlgorithmException | KeyStoreException | UnrecoverableEntryException e) {
+            Log.w("AVISO", "NAO Entrou no segundo VRFY try", e);
             e.printStackTrace();
         }
 
@@ -334,6 +349,74 @@ public class MainActivity extends AppCompatActivity {
 
 
         Log.i("AVISO", "TERMINOU BUTAO");
+    }
+
+    // https://developer.android.com/reference/android/security/keystore/KeyProtection.html
+    public void importCert (View view) {
+
+        PrivateKey privateKey = null;   // EC/RSA private key
+        try {
+            privateKey = PrivateKeyReader.get("fd.key");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        //Certificate[] certChain = ...; // Certificate chain with the first certificate
+        // containing the corresponding EC/RSA public key.
+
+        KeyStore keyStore = null;
+        try {
+            keyStore = KeyStore.getInstance("AndroidKeyStore");
+            keyStore.load(null);
+        } catch (KeyStoreException | CertificateException | IOException | NoSuchAlgorithmException e) {
+            e.printStackTrace();
+            Log.w("AVISO", "NAO Entrou no primeiro try", e);
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (keyStore != null) {
+                try {
+                    keyStore.setEntry( "key2", new KeyStore.PrivateKeyEntry(privateKey, certChain),
+                            new KeyProtection.Builder(KeyProperties.PURPOSE_SIGN)
+                            .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA512).build());
+
+                    // Key pair imported, obtain a reference to it.
+
+                    PrivateKey keyStorePrivateKey = (PrivateKey) keyStore.getKey("key2", null);
+
+                    PublicKey publicKey = keyStore.getCertificate("key2").getPublicKey();
+
+                    // The original private key can now be discarded.
+
+                } catch (KeyStoreException | UnrecoverableKeyException | NoSuchAlgorithmException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+
+        //Signature signature = Signature.getInstance("SHA256withECDSA");
+        //signature.initSign(keyStorePrivateKey);
+
+
+    }
+
+
+    public static class PrivateKeyReader {
+
+        public static PrivateKey get(String filename) throws Exception {
+
+            File f = new File(filename);
+            FileInputStream fis = new FileInputStream(f);
+            DataInputStream dis = new DataInputStream(fis);
+            byte[] keyBytes = new byte[(int)f.length()];
+            dis.readFully(keyBytes);
+            dis.close();
+
+            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
+            KeyFactory kf = KeyFactory.getInstance("RSA");
+            return kf.generatePrivate(spec);
+        }
     }
 
     /*
